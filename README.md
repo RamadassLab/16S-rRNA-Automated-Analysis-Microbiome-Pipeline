@@ -1,12 +1,6 @@
 # Pipeline for 16S rRNA Microbiome Analysis from Raw reads to Results
-## Pipeline Overview
-**Quality Control** using FastQC
-**Adapter Trimming** using Trim Galore
-**Merging Paired Reads** using VSEARCH
-**Taxonomic Classification** using Kraken2
-**Conversion to BIOM Format**
-**Statistical and Diversity Analysis** in R using Packages: "readr", "readxl", "phyloseq", "ggplot2", "ggpubr", "patchwork", "RcolorBrewer"
-
+## PRISM Overview
+Prism pipeline processes raw 16S rRNA sequencing reads through a structured series of steps using widely adopted bioinformatics tools. Initial quality assessment is performed with FastQC, followed by adapter and low-quality base trimming using TrimGalore. Clean paired-end reads are merged, quality-filtered, and dereplicated with VSEARCH, which is also used for chimera removal. Taxonomic assignment is conducted using Kraken2, and the resulting classification reports are converted into an OTU table in BIOM format using kraken-biom. The OTU table is then refined. Statistical and Diversity Analysis in R using Packages, phyloseq and dplyr to filter low-abundance taxa and structure the data. Finally, alpha and beta diversity metrics, PCoA plots, stacked bar charts, and statistical comparisons are generated using vegan, ggplot2, and ggpubr. The pipeline produces publication-ready visualizations and clean abundance matrices for downstream interpretation.
 # ============ PRISM workflow ===============
 ```bash
 #!/bin/bash
