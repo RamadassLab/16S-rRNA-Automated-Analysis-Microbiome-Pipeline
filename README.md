@@ -7,41 +7,42 @@
 **Conversion to BIOM Format**
 **Statistical and Diversity Analysis** in R using Packages: "readr", "readxl", "phyloseq", "ggplot2", "ggpubr", "patchwork", "RcolorBrewer"
 
-## pipeline workflow
+# ============ PRISM workflow ===============
+```bash
 #!/bin/bash
-# Create a log file with timestamp
-LOGFILE="pipeline_$(date +%Y%m%d_%H%M%S).log"
 
-# Redirect all output (stdout + stderr) to both terminal and log file
-exec > >(tee -a "$LOGFILE") 2>&1
+LOG_FILE="pipeline.log"
+exec > >(stdbuf -oL tee -a "$LOG_FILE") 2>&1
 
-# ===============================
-# Complete Processing + Diversity + Abundance
-# ===============================
-# make sure to mention your Raw reads directory name before the run
+echo "=========== Starting pipeline at $(date) ============"
+
+
 # === CONFIGURATION ===
+# mention your Raw reads directory before run
 RAW_READS_DIR="directory_name"
 OUTPUT_DIR="output"
 # Set the Kraken2 database path
-KRAKEN_DB="/home/ccmr_server/kraken2-db"
+KRAKEN_DB="/file_path/kraken2-db"
 THREADS=4
-# Mention your exact path to the Metadata
+
 # Paths to biom + metadata files for downstream analysis
-BIOM_FILE="/mnt/ortho_otu.biom"
-METADATA_FILE="/home/ccmr_server/test2/ORTHO_Metadata.xlsx"
-OTU_TABLE="/home/ccmr_server/test2/output/kraken/all_samples_otu_table.tsv"
+# make sure to change the names of files and their path
+METADATA_FILE="/directory_path/file_name.xlsx"
 
 # === CREATE OUTPUT DIRS ===
 mkdir -p $OUTPUT_DIR/fastqc $OUTPUT_DIR/trimmed $OUTPUT_DIR/merged $OUTPUT_DIR/vsearch $OUTPUT_DIR/kraken
+
 # ===== STEP 1: QUALITY CHECK =======
 echo "========== Step 1: Quality Check with FastQC =========="
 fastqc $RAW_READS_DIR/*.fastq.gz -t $THREADS -o $OUTPUT_DIR/fastqc
+
 # ===== STEP 2: TRIMMING ADAPTORS ======
 echo "========== Step 2: Trimming with TrimGalore =========="
 for fq in $RAW_READS_DIR/*_1.fastq.gz; do
     base=$(basename "$fq" _1.fastq.gz)
     trim_galore --paired $RAW_READS_DIR/${base}_1.fastq.gz $RAW_READS_DIR/${base}_2.fastq.gz -o $OUTPUT_DIR/trimmed
 done
+
 # ===== STEP 3: MERGING PAIRED-END READS =====
 echo "========== Step 3: Merging Paired-End Reads =========="
 for fq in $OUTPUT_DIR/trimmed/*_1_val_1.fq.gz; do
@@ -51,6 +52,7 @@ for fq in $OUTPUT_DIR/trimmed/*_1_val_1.fq.gz; do
             --fastqout "$OUTPUT_DIR/merged/${base}_merged.fq" \
             --threads $THREADS
 done
+
 # ===== STEP 4: QUALITY FILTERING =====
 echo "========== Step 4: Quality Filtering + Dereplication =========="
 for fq in $OUTPUT_DIR/merged/*.fq; do
@@ -59,12 +61,14 @@ for fq in $OUTPUT_DIR/merged/*.fq; do
     vsearch --derep_fulllength $OUTPUT_DIR/vsearch/${base}_filtered.fa \
             --output $OUTPUT_DIR/vsearch/${base}_derep.fa --sizeout
 done
+
 # ====== STEP 5: CHIMERA REMOVAL =====
 echo "========== Step 5: Chimera Removal =========="
 for fa in $OUTPUT_DIR/vsearch/*_derep.fa; do
     base=$(basename "$fa" _derep.fa)
     vsearch --uchime_denovo $fa --nonchimeras $OUTPUT_DIR/vsearch/${base}_nochim.fa
 done
+
 # ===== STEP 6: TAXONOMIC CLASSIFICATION =====
 echo "========== Step 6: Taxonomic Classification with Kraken =========="
 for fa in "$OUTPUT_DIR"/vsearch/*_nochim.fa; do
@@ -75,6 +79,7 @@ for fa in "$OUTPUT_DIR"/vsearch/*_nochim.fa; do
             --report "$OUTPUT_DIR/kraken/${base}_kraken.report" \
             "$fa"
 done
+
 # ===== STEP 7: CONVERSION OF KRAKEN REPORTS TO BIOM FILE =====
 echo "========== Step 7: Convert Kraken Reports to BIOM OTU Table =========="
 REPORT_DIR="${OUTPUT_DIR}/kraken"
@@ -85,6 +90,7 @@ kraken-biom \
   "${REPORT_DIR}"/*_kraken.report
 
 echo "Written combined BIOM to ${MERGED_BIOM}"
+
 # ===== STEP 8: OTU TABLE PREPARATION =====
 echo "========== Step 8: Process BIOM file with phyloseq and export OTU table =========="
 
@@ -138,8 +144,9 @@ write.table(final_df, file = otu_table_file, sep = "\t", row.names = FALSE, quot
 EOF
 
 echo "Written combined OTU table to $OTU_TABLE_FILE"
+
 # MAKE SURE THE NAME OF PIPELINE IS CORRECT BEFORE THE RUN
-# Usage: ./pipeline_name.sh <otu_table.tsv> <metadata.xlsx>
+# Usage: ./pipeline.sh <otu_table.tsv> <metadata.xlsx>
 
 if [ "$#" -lt 2 ]; then
   echo "Usage: $0 <otu_table.tsv> <Metadata.xlsx>"
@@ -148,9 +155,10 @@ fi
 
 OTU_TABLE="$1"
 METADATA="$2"
+
 # ===== STEP 9: Statistical Analysis =====
 echo "========== Step 9: Diversity + Abundance Analysis =========="
-echo "Running diversity & abundance analysis with:"
+echo "  Running diversity & abundance analysis with:"
 echo "   OTU table : $OTU_TABLE"
 echo "   Metadata  : $METADATA"
 
@@ -175,20 +183,29 @@ METADATA <- args[2]
 # Load data
 # ================================
 otu_df <- read_tsv(OTU_TABLE, show_col_types = FALSE)
-meta_df <- read_excel(METADATA, sheet = "Sheet1") %>%
+meta_df <- read_excel(METADATA, sheet = "Sheet1") %>% #mention metadata sheet name
   as.data.frame() %>%
   tibble::column_to_rownames(var = "Samples")
 
-# ================================
-# Prepare OTU table
-# ================================
-otu_mat <- otu_df %>%
-  column_to_rownames(var = "OTU_ID") %>%
-  as.data.frame()
+otu_df <- otu_df %>% filter(!is.na(OTU_ID) & OTU_ID != "")
 
+# Check duplicates in OTU_ID
+dup_count <- sum(duplicated(otu_df$OTU_ID))
+if (dup_count > 0) {
+  cat("Found", dup_count, "duplicate OTU_IDs — keeping first occurrence only.\n")
+  otu_df <- otu_df %>% distinct(OTU_ID, .keep_all = TRUE)
+}
 
+# ================================
+# Keep only sample columns to avoid huge taxonomy names
+# ================================
+sample_cols <- grep("^SRR", colnames(otu_df), value = TRUE)
+otu_counts <- otu_df[, sample_cols]
+
+# ================================
 # Transpose so samples are rows
-otu_mat_t <- as.data.frame(t(otu_mat))
+# ================================
+otu_mat_t <- as.data.frame(t(otu_counts))
 
 # Clean OTU sample names to match metadata
 rownames(otu_mat_t) <- sub("_.*", "", rownames(otu_mat_t))
@@ -237,6 +254,8 @@ stopifnot(all(rownames(otu_only) == rownames(meta_df)))
 # ================================
 otu_meta <- cbind(meta_df, otu_only)
 
+
+
 # ================================
 # Alpha diversity
 # ================================
@@ -254,14 +273,24 @@ alpha_df <- data.frame(
   Pielou = pielou
 )
 
-plot_alpha <- function(alpha_df, metric, ylab_title) {
-  ggplot(data = alpha_df, aes(x = Group, y = .data[[metric]], color = Group)) +
-    geom_boxplot(outlier.shape = NA) +
-    geom_jitter(width = 0.2, alpha = 0.7) +
-    labs(title = metric, y = ylab_title) +
-    theme_minimal()
-}
+# Create comparisons
+comparisons <- combn(unique(alpha_df$Group), 2, simplify = FALSE)
 
+plot_alpha <- function(df, metric, ylab_title) {
+  ggplot(df, aes(x = Group, y = .data[[metric]], color = Group)) +
+    geom_boxplot(alpha = 0.6, outlier.shape = NA) +
+    geom_jitter(width = 0.15, size = 1.8) +
+    stat_compare_means(
+      method = "wilcox.test",
+      comparisons = comparisons,
+      label = "p.format",
+      size = 3
+    ) +
+    theme_minimal(base_size = 13) +
+    labs(y = ylab_title, title = ylab_title) +
+    scale_color_brewer(palette = "Dark2") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
 p1 <- plot_alpha(alpha_df , "Observed", "Observed OTUs")
 p2 <- plot_alpha(alpha_df , "Shannon", "Shannon Index")
 p3 <- plot_alpha(alpha_df , "Simpson", "Simpson Index")
@@ -303,26 +332,31 @@ ggsave("beta_diversity_pcoa.png", p_pcoa, width = 10, height = 6, dpi = 300, bg 
 # ================================
 # Abundance (Top 10 genera)
 # ================================
+sample_cols <- grep("^(SRR)", colnames(otu_df), value = TRUE)
+
 otu_abund <- otu_df %>%
-  select(-c(kingdom, phylum, class, order, family, genus, species)) %>%
-  mutate(OTU_ID = as.character(OTU_ID))
-         
+  select(all_of(sample_cols)) %>%
+  mutate(OTU_ID = as.character(otu_df$OTU_ID))
+
 otu_tax <- otu_df %>%
   select(OTU_ID, genus) %>%
-  mutate(OTU_ID = as.character(OTU_ID), 
-         genus = ifelse(genus == "", "Unclassified", genus),
-         genus = stringr::str_to_title(genus)
+  mutate(
+    OTU_ID = as.character(OTU_ID), 
+    genus = ifelse(genus == "", "Unclassified", genus),
+    genus = stringr::str_to_title(genus)
   )
 
 otu_long <- otu_abund %>%
   pivot_longer(-OTU_ID, names_to = "Samples", values_to = "Abundance") %>%
   mutate(
+    Abundance = as.numeric(Abundance),
     Samples = sub("_.*", "", Samples),
     Samples = tolower(trimws(Samples))
   ) %>%
   left_join(otu_tax, by = "OTU_ID") %>%
   left_join(meta_df %>% rownames_to_column("Samples"), by = "Samples") %>%
-  filter(!is.na(Group))
+  filter(!is.na(Abundance))
+otu_long$Abundance[is.na(otu_long$Abundance)] <- 0
 
 
 genus_abundance <- otu_long %>%
@@ -359,15 +393,15 @@ p_abundance <- ggplot(genus_plot_data, aes(x = Group, y = Percentage, fill = gen
   theme_minimal() +
   labs(x = "Group", y = "Relative Abundance (%)", fill = "genus") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("Top10_Genus_Abundance.png", p_abundance, width = 10, height = 6, dpi = 300, bg = "white")
+ggsave("Top10_Genus_DynamicYAxis.png", p_abundance, width = 10, height = 6, dpi = 300, bg = "white")
 EOF
 
 echo "Completed!"
 echo "Output files:"
 echo " - alpha_diversity_combined.png"
 echo " - beta_diversity_pcoa.png"
-echo " - Top10_Genus_Abundance.png"
-
-echo "Pipeline started on $(date)"
+echo " - Top10_Genus_DynamicYAxis.png"
+echo "============ pipeline completed at $(date) ==============="
 
 # To run the pipeline in the command line use the command: ./pipeline_name.sh
+
