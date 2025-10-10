@@ -397,5 +397,5 @@ echo " - beta_diversity_pcoa.png"
 echo " - Top10_Genus_DynamicYAxis.png"
 echo "============ pipeline completed at $(date) ==============="
 
-# To run the pipeline in the command line use the command: ./pipeline_name.sh
+# To run the pipeline copy this file and save as pipeline.sh, then run it as ./pipeline.sh
 
