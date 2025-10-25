@@ -21,7 +21,7 @@ THREADS=4
 
 # Paths to biom + metadata files for downstream analysis
 # make sure to change the names of files and their path
-METADATA_FILE="/directory_path/file_name.xlsx"
+METADATA="/directory_path/file_name.xlsx"
 
 # === CREATE OUTPUT DIRS ===
 mkdir -p $OUTPUT_DIR/fastqc $OUTPUT_DIR/trimmed $OUTPUT_DIR/merged $OUTPUT_DIR/vsearch $OUTPUT_DIR/kraken
@@ -60,7 +60,8 @@ done
 echo "========== Step 5: Chimera Removal =========="
 for fa in $OUTPUT_DIR/vsearch/*_derep.fa; do
     base=$(basename "$fa" _derep.fa)
-    vsearch --uchime_denovo $fa --nonchimeras $OUTPUT_DIR/vsearch/${base}_nochim.fa
+    vsearch --uchime_denovo $fa --nonchimeras $OUTPUT_DIR/vsearch/${base}_nochim.fa \
+            --threads "$THREADS"
 done
 
 # ===== STEP 6: TAXONOMIC CLASSIFICATION =====
@@ -138,17 +139,7 @@ write.table(final_df, file = otu_table_file, sep = "\t", row.names = FALSE, quot
 EOF
 
 echo "Written combined OTU table to $OTU_TABLE_FILE"
-
-# MAKE SURE THE NAME OF PIPELINE IS CORRECT BEFORE THE RUN
-# Usage: ./pipeline.sh <otu_table.tsv> <metadata.xlsx>
-
-if [ "$#" -lt 2 ]; then
-  echo "Usage: $0 <otu_table.tsv> <Metadata.xlsx>"
-  exit 1
-fi
-
-OTU_TABLE="$1"
-METADATA="$2"
+OTU_TABLE="$OUTPUT_DIR/kraken/all_sample_otu_table.tsv"
 
 # ===== STEP 9: Statistical Analysis =====
 echo "========== Step 9: Diversity + Abundance Analysis =========="
